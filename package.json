@@ -1,14 +1,19 @@
 {
   "name": "human-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Human Backend API",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only server.ts"
+    "dev": "ts-node-dev --respawn --transpile-only server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Akshat Jain",
   "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@google/genai": "^1.40.0",
     "@google/generative-ai": "^0.24.1",
