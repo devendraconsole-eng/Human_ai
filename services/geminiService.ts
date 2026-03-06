@@ -10,7 +10,6 @@ if (!process.env.API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Schema ensures Play Store compliance and UI stability
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -35,21 +34,21 @@ const responseSchema = {
 
 const getBasePrompt = (targetLanguage: string) => `
   You are a Wellness AI for the "Human Disease Detector" app.
-  CRITICAL: Use ONLY observational language (e.g., "appears to show"). 
-  DO NOT DIAGNOSE. DO NOT PRESCRIBE.
-  MANDATORY DISCLAIMER in ${targetLanguage}: "IMPORTANT: This is an AI observation and not a medical diagnosis. Consult a healthcare professional."
+  CRITICAL: Use ONLY observational language. DO NOT DIAGNOSE.
+  MANDATORY DISCLAIMER in ${targetLanguage}: "IMPORTANT: This is an AI observation and not a medical diagnosis."
 `;
 
+// FIXED: Added type casting for 'en' as Language
 export const analyzeFromImageAndText = async (
   description: string,
   imageBase64: string,
   mimeType: string,
-  language: Language = 'en'
+  language: Language = 'en' as Language 
 ) => {
   const targetLanguage = language === 'hi' ? 'Hindi' : 'English';
   const prompt = `${getBasePrompt(targetLanguage)}\nUser Details: ${description}`;
 
-  return await ai.models.generateContent({
+  const result = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [
       {
@@ -65,13 +64,19 @@ export const analyzeFromImageAndText = async (
       temperature: 0.2,
     }
   });
+  
+  return result;
 };
 
-export const analyzeFromTextOnly = async (description: string, language: Language = 'en') => {
+// FIXED: Added type casting for 'en' as Language
+export const analyzeFromTextOnly = async (
+  description: string, 
+  language: Language = 'en' as Language
+) => {
   const targetLanguage = language === 'hi' ? 'Hindi' : 'English';
   const prompt = `${getBasePrompt(targetLanguage)}\nAnalyze: ${description}`;
 
-  return await ai.models.generateContent({
+  const result = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: [{ parts: [{ text: prompt }] }],
     config: {
@@ -80,4 +85,6 @@ export const analyzeFromTextOnly = async (description: string, language: Languag
       temperature: 0.3,
     }
   });
+
+  return result;
 };
