@@ -43,13 +43,15 @@ export const analyzeFromImageAndText = async (
   description: string,
   imageBase64: string,
   mimeType: string,
-  language: Language = 'en' as Language 
+  language: Language = Language.EN
 ) => {
-  const targetLanguage = language === 'hi' ? 'Hindi' : 'English';
+
+  const targetLanguage = language === Language.HI ? "Hindi" : "English";
+
   const prompt = `${getBasePrompt(targetLanguage)}\nUser Details: ${description}`;
 
   const result = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: "gemini-2.5-flash",
     contents: [
       {
         parts: [
@@ -64,16 +66,16 @@ export const analyzeFromImageAndText = async (
       temperature: 0.2,
     }
   });
-  
+
   return result;
 };
 
 // FIXED: Added type casting for 'en' as Language
 export const analyzeFromTextOnly = async (
   description: string, 
-  language: Language = 'en' as Language
+  language: Language = Language.EN
 ) => {
-  const targetLanguage = language === 'hi' ? 'Hindi' : 'English';
+  const targetLanguage = language === Language.HI ? "Hindi" : "English";
   const prompt = `${getBasePrompt(targetLanguage)}\nAnalyze: ${description}`;
 
   const result = await ai.models.generateContent({
