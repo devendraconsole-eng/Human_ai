@@ -1,82 +1,83 @@
 import dotenv from "dotenv";
-dotenv.config({ path: ".env" });
+dotenv.config();
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
+import { Language } from "../types/types";
 
 if (!process.env.API_KEY) {
   throw new Error("API_KEY not found in .env file");
 }
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.API_KEY,
-});
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export const analyzeFromText = async (description: string): Promise<string> => {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ parts: [{ text: description }] }],
-  });
-
-  return response.text ?? "";
+// Schema ensures Play Store compliance and UI stability
+const responseSchema = {
+  type: Type.OBJECT,
+  properties: {
+    imageQuality: { type: Type.STRING, enum: ['good', 'bad'] },
+    feedback: { type: Type.STRING },
+    diagnosis: {
+      type: Type.OBJECT,
+      nullable: true,
+      properties: {
+        conditionName: { type: Type.STRING },
+        confidence: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
+        description: { type: Type.STRING },
+        disclaimer: { type: Type.STRING },
+        potentialCauses: { type: Type.ARRAY, items: { type: Type.STRING } },
+        generalAdvice: { type: Type.ARRAY, items: { type: Type.STRING } },
+        whenToSeeDoctor: { type: Type.ARRAY, items: { type: Type.STRING } },
+        preventionAndCare: { type: Type.ARRAY, items: { type: Type.STRING } },
+      },
+    },
+  },
 };
 
-const SYSTEM_PROMPT = `You are a general wellness AI assistant that helps users understand visual observations and symptoms. You do NOT diagnose, prescribe, or replace professional medical advice.
-
-Analyze the provided image and/or symptom description and respond ONLY with a valid JSON object in this exact format (no markdown, no extra text, no code fences):
-
-{
-  "severity": "critical" | "moderate" | "normal",
-  "condition": "Brief name of the possible observation (e.g. 'Possible skin irritation', 'Mild redness', 'No visible concern')",
-  "summary": "2-3 sentences written conversationally as an AI assistant sharing an observation, not a diagnosis. Use language like 'This appears to show...', 'The image suggests...', 'Based on the description...'",
-  "recommendations": [
-    "Actionable self-care tip or lifestyle suggestion",
-    "When to consult a doctor (use gentle language like 'consider speaking with a healthcare provider')",
-    "One more practical tip"
-  ],
-  "seekImmediateCare": true | false
-}
-
-Severity rules:
-- "critical": the observation suggests something that may need prompt professional attention
-- "moderate": worth monitoring and seeing a doctor if it persists or worsens
-- "normal": no concerning signs observed
-
-IMPORTANT: Always use observational, non-diagnostic language. Never claim to diagnose. Remind users this is for informational purposes. Always respond with ONLY the raw JSON object.`;
+const getBasePrompt = (targetLanguage: string) => `
+  You are a Wellness AI for the "Human Disease Detector" app.
+  CRITICAL: Use ONLY observational language (e.g., "appears to show"). 
+  DO NOT DIAGNOSE. DO NOT PRESCRIBE.
+  MANDATORY DISCLAIMER in ${targetLanguage}: "IMPORTANT: This is an AI observation and not a medical diagnosis. Consult a healthcare professional."
+`;
 
 export const analyzeFromImageAndText = async (
   description: string,
   imageBase64: string,
-  mimeType: string
-): Promise<string> => {
-  const parts: any[] = [
-    { text: SYSTEM_PROMPT },
-    { inlineData: { mimeType, data: imageBase64 } },
-  ];
+  mimeType: string,
+  language: Language = 'en'
+) => {
+  const targetLanguage = language === 'hi' ? 'Hindi' : 'English';
+  const prompt = `${getBasePrompt(targetLanguage)}\nUser Details: ${description}`;
 
-  if (description.trim()) {
-    parts.push({ text: `Additional patient description: ${description}` });
-  }
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ parts }],
-  });
-
-  return response.text ?? "";
-};
-
-export const analyzeFromTextOnly = async (description: string): Promise<string> => {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+  return await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
     contents: [
       {
         parts: [
-          { text: SYSTEM_PROMPT },
-          { text: `Patient description: ${description}` },
-        ],
-      },
+          { inlineData: { data: imageBase64, mimeType } },
+          { text: prompt }
+        ]
+      }
     ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema,
+      temperature: 0.2,
+    }
   });
+};
 
-  return response.text ?? "";
+export const analyzeFromTextOnly = async (description: string, language: Language = 'en') => {
+  const targetLanguage = language === 'hi' ? 'Hindi' : 'English';
+  const prompt = `${getBasePrompt(targetLanguage)}\nAnalyze: ${description}`;
+
+  return await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [{ parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema,
+      temperature: 0.3,
+    }
+  });
 };

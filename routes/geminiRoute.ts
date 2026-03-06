@@ -3,39 +3,28 @@ import { analyzeFromImageAndText, analyzeFromTextOnly } from "../services/gemini
 
 const router = express.Router();
 
+// Handles POST http://YOUR_IP:5000/api/gemini/analyze
 router.post("/analyze", async (req, res) => {
-  const { description, imageBase64, mimeType } = req.body;
+  const { description, imageBase64, mimeType, language } = req.body;
 
   try {
-    let rawResult: string;
+    let response;
 
     if (imageBase64 && mimeType) {
-      rawResult = await analyzeFromImageAndText(description ?? "", imageBase64, mimeType);
+      response = await analyzeFromImageAndText(description ?? "", imageBase64, mimeType, language);
     } else {
-      rawResult = await analyzeFromTextOnly(description ?? "");
+      response = await analyzeFromTextOnly(description ?? "", language);
     }
 
-    // Strip markdown code fences if Gemini wraps response
-    const cleaned = rawResult.replace(/```json|```/g, "").trim();
+    // Since we used responseMimeType: "application/json", response.text is already clean
+    const parsed = JSON.parse(response.text);
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      // Fallback if Gemini doesn't return valid JSON
-      parsed = {
-        severity: "normal",
-        condition: "Analysis Complete",
-        summary: cleaned,
-        recommendations: ["Please consult a healthcare professional for accurate diagnosis."],
-        seekImmediateCare: false,
-      };
-    }
+    // Send the result in the exact format your frontend index.tsx expects
+    res.json(parsed);
 
-    res.json({ result: parsed });
   } catch (error: any) {
-    console.error("Gemini error:", error);
-    res.status(500).json({ error: error?.message ?? "Analysis failed" });
+    console.error("Gemini Error:", error);
+    res.status(500).json({ error: error?.message || "Internal Server Error" });
   }
 });
 
