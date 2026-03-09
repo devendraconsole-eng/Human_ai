@@ -32,13 +32,21 @@ const responseSchema = {
   },
 };
 
+// --- THIS IS THE MAGIC FIX ---
 const getBasePrompt = (targetLanguage: string) => `
   You are a Wellness AI for the "Human Disease Detector" app.
-  CRITICAL: Use ONLY observational language. DO NOT DIAGNOSE.
-  MANDATORY DISCLAIMER in ${targetLanguage}: "IMPORTANT: This is an AI observation and not a medical diagnosis."
+  
+  CRITICAL INSTRUCTIONS:
+  1. If the image quality is "good", you MUST fully populate the 'diagnosis' JSON object. Do not leave it null.
+  2. Even though the object is called 'diagnosis', use ONLY observational language. 
+  3. For 'conditionName', provide a descriptive observational name (e.g., "Ring-shaped Skin Rash", "Red Scaly Patches") instead of a definitive medical disease name.
+  4. If the image quality is "bad" or irrelevant to human health, set 'imageQuality' to 'bad', leave 'diagnosis' as null, and explain why in the 'feedback' field.
+  
+  MANDATORY: Place this exact disclaimer in the 'disclaimer' field in ${targetLanguage}: "IMPORTANT: This is an AI observation and not a medical diagnosis. Always consult a healthcare professional."
+  
+  Respond completely in ${targetLanguage}.
 `;
 
-// FIXED: Added type casting for 'en' as Language
 export const analyzeFromImageAndText = async (
   description: string,
   imageBase64: string,
@@ -70,7 +78,6 @@ export const analyzeFromImageAndText = async (
   return result;
 };
 
-// FIXED: Added type casting for 'en' as Language
 export const analyzeFromTextOnly = async (
   description: string, 
   language: Language = Language.EN
