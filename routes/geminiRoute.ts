@@ -1,8 +1,8 @@
 import express from "express";
 import {
-  analyzeFromImageAndText,
-  analyzeFromTextOnly,
-  chatFollowUp,
+  analyzeFromImageAndTextStream,
+  analyzeFromTextOnlyStream,
+  chatFollowUpStream,
 } from "../services/geminiService";
 import { Language } from "../types/types";
 
@@ -17,52 +17,60 @@ interface AnalyzeRequest {
 
 interface ChatRequest {
   messages: { role: "user" | "assistant"; content: string }[];
-  diagnosis: {
-    conditionName: string;
-    confidence: string;
-    description: string;
-    disclaimer: string;
-    potentialCauses: string[];
-    generalAdvice: string[];
-    whenToSeeDoctor: string[];
-    preventionAndCare: string[];
-  };
+  diagnosis: any;
   language?: Language;
 }
 
-// ── POST /api/gemini/analyze ──────────────────────────────────────────────────
+/* ───────────────────────────────────────────────────────────────
+   STREAM ANALYZE (⚡ FAST)
+──────────────────────────────────────────────────────────────── */
 router.post(
   "/analyze",
   async (req: express.Request<{}, {}, AnalyzeRequest>, res: express.Response) => {
     const { description, imageBase64, mimeType, language } = req.body;
 
     try {
-      let response;
+      let stream;
 
       if (imageBase64 && mimeType) {
-        response = await analyzeFromImageAndText(
+        stream = await analyzeFromImageAndTextStream(
           description ?? "",
           imageBase64,
           mimeType,
           language
         );
       } else {
-        response = await analyzeFromTextOnly(description ?? "", language);
+        stream = await analyzeFromTextOnlyStream(
+          description ?? "",
+          language
+        );
       }
 
-      const parsed = JSON.parse(
-        response.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}"
-      );
+      // 🔥 VERY IMPORTANT HEADERS (SSE)
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
 
-      res.json(parsed);
+      // Stream chunks
+      for await (const chunk of stream) {
+        const text = chunk.text;
+        if (text) {
+          res.write(`data: ${text}\n\n`);
+        }
+      }
+
+      res.end();
     } catch (error: any) {
       console.error("Gemini Analyze Error:", error);
-      res.status(500).json({ error: error?.message || "Internal Server Error" });
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+      res.end();
     }
   }
 );
 
-// ── POST /api/gemini/chat ─────────────────────────────────────────────────────
+/* ───────────────────────────────────────────────────────────────
+   STREAM CHAT (⚡ FAST)
+──────────────────────────────────────────────────────────────── */
 router.post(
   "/chat",
   async (req: express.Request<{}, {}, ChatRequest>, res: express.Response) => {
@@ -74,11 +82,29 @@ router.post(
     }
 
     try {
-      const reply = await chatFollowUp(messages, diagnosis, language);
-      res.json({ reply });
+      const stream = await chatFollowUpStream(
+        messages,
+        diagnosis,
+        language
+      );
+
+      // 🔥 SSE HEADERS
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      for await (const chunk of stream) {
+        const text = chunk.text;
+        if (text) {
+          res.write(`data: ${text}\n\n`);
+        }
+      }
+
+      res.end();
     } catch (error: any) {
       console.error("Gemini Chat Error:", error);
-      res.status(500).json({ error: error?.message || "Internal Server Error" });
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+      res.end();
     }
   }
 );

@@ -10,7 +10,9 @@ if (!process.env.API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// ── Response schema for /analyze ──────────────────────────────────────────────
+/* ─────────────────────────────────────────────
+   RESPONSE SCHEMA
+───────────────────────────────────────────── */
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
@@ -33,32 +35,39 @@ const responseSchema = {
   },
 };
 
-// ── Base prompt for /analyze ──────────────────────────────────────────────────
+/* ─────────────────────────────────────────────
+   BASE PROMPT
+───────────────────────────────────────────── */
 const getBasePrompt = (targetLanguage: string) => `
-  You are a Wellness AI for the "Human Disease Detector" app.
-  
-  CRITICAL INSTRUCTIONS:
-  1. If the image quality is "good", you MUST fully populate the 'diagnosis' JSON object. Do not leave it null.
-  2. Even though the object is called 'diagnosis', use ONLY observational language. 
-  3. For 'conditionName', provide a descriptive observational name (e.g., "Ring-shaped Skin Rash", "Red Scaly Patches") instead of a definitive medical disease name.
-  4. If the image quality is "bad" or irrelevant to human health, set 'imageQuality' to 'bad', leave 'diagnosis' as null, and explain why in the 'feedback' field.
-  
-  MANDATORY: Place this exact disclaimer in the 'disclaimer' field in ${targetLanguage}: "IMPORTANT: This is an AI observation and not a medical diagnosis. Always consult a healthcare professional."
-  
-  Respond completely in ${targetLanguage}.
+You are a Wellness AI for the "Human Disease Detector" app.
+
+CRITICAL INSTRUCTIONS:
+1. If the image quality is "good", you MUST fully populate the 'diagnosis' JSON object.
+2. Use only observational language.
+3. Do NOT give definitive medical diagnosis.
+4. If image quality is bad → diagnosis must be null.
+
+MANDATORY DISCLAIMER:
+"IMPORTANT: This is an AI observation and not a medical diagnosis. Always consult a healthcare professional."
+
+Respond fully in ${targetLanguage}.
 `;
 
-// ── analyzeFromImageAndText ───────────────────────────────────────────────────
-export const analyzeFromImageAndText = async (
+/* ─────────────────────────────────────────────
+   IMAGE + TEXT ANALYSIS (STREAMING)
+───────────────────────────────────────────── */
+export const analyzeFromImageAndTextStream = async (
   description: string,
   imageBase64: string,
   mimeType: string,
   language: Language = Language.EN
 ) => {
   const targetLanguage = language === Language.HI ? "Hindi" : "English";
-  const prompt = `${getBasePrompt(targetLanguage)}\nUser Details: ${description}`;
 
-  const result = await ai.models.generateContent({
+  const prompt = `${getBasePrompt(targetLanguage)}
+User Details: ${description}`;
+
+  const stream = await ai.models.generateContentStream({
     model: "gemini-2.5-flash",
     contents: [
       {
@@ -75,18 +84,22 @@ export const analyzeFromImageAndText = async (
     },
   });
 
-  return result;
+  return stream;
 };
 
-// ── analyzeFromTextOnly ───────────────────────────────────────────────────────
-export const analyzeFromTextOnly = async (
+/* ─────────────────────────────────────────────
+   TEXT ONLY ANALYSIS (STREAMING)
+───────────────────────────────────────────── */
+export const analyzeFromTextOnlyStream = async (
   description: string,
   language: Language = Language.EN
 ) => {
   const targetLanguage = language === Language.HI ? "Hindi" : "English";
-  const prompt = `${getBasePrompt(targetLanguage)}\nAnalyze: ${description}`;
 
-  const result = await ai.models.generateContent({
+  const prompt = `${getBasePrompt(targetLanguage)}
+Analyze: ${description}`;
+
+  const stream = await ai.models.generateContentStream({
     model: "gemini-2.5-flash",
     contents: [{ parts: [{ text: prompt }] }],
     config: {
@@ -96,56 +109,45 @@ export const analyzeFromTextOnly = async (
     },
   });
 
-  return result;
+  return stream;
 };
 
-// ── chatFollowUp ──────────────────────────────────────────────────────────────
-export const chatFollowUp = async (
+/* ─────────────────────────────────────────────
+   CHAT FOLLOW-UP (STREAMING)
+───────────────────────────────────────────── */
+export const chatFollowUpStream = async (
   messages: { role: "user" | "assistant"; content: string }[],
-  diagnosis: {
-    conditionName: string;
-    confidence: string;
-    description: string;
-    disclaimer: string;
-    potentialCauses: string[];
-    generalAdvice: string[];
-    whenToSeeDoctor: string[];
-    preventionAndCare: string[];
-  },
+  diagnosis: any,
   language: Language = Language.EN
-): Promise<string> => {
+) => {
   const targetLanguage = language === Language.HI ? "Hindi" : "English";
 
-  // Build a system context summarising the diagnosis for the model
   const systemContext = `
-You are a helpful Wellness AI assistant for the "Human Disease Detector" app.
-A user has just received the following AI health observation:
+You are a helpful Wellness AI assistant.
 
+Observation:
 Condition: ${diagnosis.conditionName}
 Confidence: ${diagnosis.confidence}
 Description: ${diagnosis.description}
-Potential Causes: ${diagnosis.potentialCauses.join(", ")}
-General Advice: ${diagnosis.generalAdvice.join(", ")}
-When to See a Doctor: ${diagnosis.whenToSeeDoctor.join(", ")}
-Prevention & Care: ${diagnosis.preventionAndCare.join(", ")}
 
-IMPORTANT RULES:
-- Answer the user's follow-up questions about this observation only.
-- Always use observational language — never give a definitive medical diagnosis.
-- Always remind the user to consult a qualified healthcare professional for medical advice.
-- Be concise, friendly, and helpful.
-- Respond entirely in ${targetLanguage}.
-  `.trim();
+Always use observational language.
+Always recommend consulting a doctor.
+Respond in ${targetLanguage}.
+`;
 
-  // Convert messages array into a single conversation string
-  // (Google GenAI simple text generation — no multi-turn chat API needed)
-  const conversationHistory = messages
+  const history = messages
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
     .join("\n");
 
-  const fullPrompt = `${systemContext}\n\nConversation so far:\n${conversationHistory}\n\nAssistant:`;
+  const fullPrompt = `${systemContext}
 
-  const result = await ai.models.generateContent({
+Conversation:
+${history}
+
+Assistant:
+`;
+
+  const stream = await ai.models.generateContentStream({
     model: "gemini-2.5-flash",
     contents: [{ parts: [{ text: fullPrompt }] }],
     config: {
@@ -153,9 +155,5 @@ IMPORTANT RULES:
     },
   });
 
-  const reply =
-    result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ??
-    "I'm sorry, I couldn't generate a response. Please try again.";
-
-  return reply;
+  return stream;
 };
