@@ -22,7 +22,7 @@ interface ChatRequest {
 }
 
 /* ───────────────────────────────────────────────────────────────
-   STREAM ANALYZE (⚡ FAST)
+   ANALYZE — returns plain JSON (works on Hermes/APK)
 ──────────────────────────────────────────────────────────────── */
 router.post(
   "/analyze",
@@ -46,30 +46,26 @@ router.post(
         );
       }
 
-      // 🔥 VERY IMPORTANT HEADERS (SSE)
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-
-      // Stream chunks
+      // ✅ Collect full streamed response from Gemini
+      let fullText = "";
       for await (const chunk of stream) {
         const text = chunk.text;
-        if (text) {
-          res.write(`data: ${text}\n\n`);
-        }
+        if (text) fullText += text;
       }
 
-      res.end();
+      // ✅ Parse and return as plain JSON — works on all platforms
+      const parsed = JSON.parse(fullText);
+      res.json(parsed);
+
     } catch (error: any) {
       console.error("Gemini Analyze Error:", error);
-      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
-      res.end();
+      res.status(500).json({ error: error.message });
     }
   }
 );
 
 /* ───────────────────────────────────────────────────────────────
-   STREAM CHAT (⚡ FAST)
+   CHAT — returns plain JSON (works on Hermes/APK)
 ──────────────────────────────────────────────────────────────── */
 router.post(
   "/chat",
@@ -82,29 +78,21 @@ router.post(
     }
 
     try {
-      const stream = await chatFollowUpStream(
-        messages,
-        diagnosis,
-        language
-      );
+      const stream = await chatFollowUpStream(messages, diagnosis, language);
 
-      // 🔥 SSE HEADERS
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-
+      // ✅ Collect full streamed response from Gemini
+      let reply = "";
       for await (const chunk of stream) {
         const text = chunk.text;
-        if (text) {
-          res.write(`data: ${text}\n\n`);
-        }
+        if (text) reply += text;
       }
 
-      res.end();
+      // ✅ Return as plain JSON
+      res.json({ reply });
+
     } catch (error: any) {
       console.error("Gemini Chat Error:", error);
-      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
-      res.end();
+      res.status(500).json({ error: error.message });
     }
   }
 );
